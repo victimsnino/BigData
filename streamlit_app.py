@@ -100,12 +100,13 @@ def get_cached_data():
 def fill_config(unique_data):
     st.sidebar.title("Config")
     unique_data['SHOW_COUNT'] = st.sidebar.checkbox('Show count after each block?', False)
+    unique_data['SHOW_FINAL_COUNT'] = st.sidebar.checkbox('Show final count?', False)
     unique_data['EXPANDED'] = st.sidebar.checkbox("Expanded by default", False)
     return unique_data
 
 def __filter_by_columns(df, unique_values, columns, header, selector_text, sidebar = False):
     with st.beta_expander(header, unique_data['EXPANDED']):
-        selected = unique_values if st.checkbox('Force all values', key = header) else unique_values[:10]
+        selected = unique_values if st.checkbox('Force all values', key = header) else unique_values[:3]
         result = st.multiselect(selector_text, unique_values, selected)
         df = df.filter(reduce(lambda x, y: x | y, (col(name).isin(result) for name in columns)))
         if unique_data['SHOW_COUNT']:
@@ -163,7 +164,11 @@ def cut_data_by_slider(df, unique_data):
     
 def plot_points(dataframe, time_slider=False):
     temp_dataframe = dataframe.select(['LATITUDE', 'LONGITUDE', 'year']).toPandas()
-    fig = px.scatter_mapbox(temp_dataframe, lat='LATITUDE', lon='LONGITUDE', hover_name='year', zoom=10, animation_frame='year' if time_slider else None)
+    temp_dataframe['LATITUDE'] = temp_dataframe['LATITUDE'].values.astype(np.float)
+    temp_dataframe['LONGITUDE'] = temp_dataframe['LONGITUDE'].values.astype(np.float)
+
+    fig = px.scatter_mapbox(temp_dataframe, lat=temp_dataframe.LATITUDE, lon=temp_dataframe.LONGITUDE,
+                            hover_name='year', zoom=10, animation_frame='year' if time_slider else None)
     fig.update_layout(mapbox_style="open-street-map", height=800)
 
     st.plotly_chart(fig, use_container_width=True)
@@ -188,7 +193,9 @@ df = filter_by_number_columns(df, unique_data)
 df = cut_data_by_slider(df, unique_data)
 
 timeline = st.checkbox('Enable timeline')
-st.write('Total count of points: ' + str(df.count()))
+if unique_data['SHOW_FINAL_COUNT']:
+    st.write('Total count of points: ' + str(df.count()))
+
 if st.checkbox('Autoplot') or st.button("Plot it!"):
     with st.spinner('Plotting...'):
         plot_points(df, timeline)
