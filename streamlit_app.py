@@ -11,6 +11,7 @@ import pandas as pd
 
 import plotly.graph_objects as go
 import plotly.express as px
+import plotly.figure_factory as ff
 px.set_mapbox_access_token("pk.eyJ1IjoieHh4OTgiLCJhIjoiY2tocmxlYXJpMHZmdzJycnNuM2J3eW1weCJ9.O3Ep-9NHHtcU4lTKoxXXOg")
 
 import pyspark
@@ -80,9 +81,10 @@ def __get_filtered_data():
 
         df = df.withColumn(column, initcap(col(column)))
 
-    df = df.where((col('LATITUDE') != 0) &
-                                (col('LONGITUDE') != 0) &
-                                (col('LONGITUDE') >= -100))
+    df = df.where((col('LONGITUDE') >= -76) &
+                    (col('LONGITUDE') <= -72) &
+                    (col('LATITUDE') >= 40) &
+                    (col('LATITUDE') <= 41))
     
     df = df.withColumn('year', year(to_date('CRASH DATE', 'MM/dd/yyy')))
     df = df.withColumn('hour', hour('CRASH TIME'))
@@ -108,7 +110,8 @@ def __filter_by_columns(df, unique_values, columns, header, selector_text, sideb
     with st.beta_expander(header, unique_data['EXPANDED']):
         selected = unique_values if st.checkbox('Force all values', key = header) else unique_values[:3]
         result = st.multiselect(selector_text, unique_values, selected)
-        df = df.filter(reduce(lambda x, y: x | y, (col(name).isin(result) for name in columns)))
+        if result != unique_values:
+            df = df.filter(reduce(lambda x, y: x | y, (col(name).isin(result) for name in columns)))
         if unique_data['SHOW_COUNT']:
             st.markdown(f'Count of values after this block: {df.count()}')
     return df
@@ -162,13 +165,19 @@ def cut_data_by_slider(df, unique_data):
             st.markdown(f'Count of values after this block: {df.count()}')
     return df
     
-def plot_points(dataframe, time_slider=False):
+def plot_points(dataframe, time_slider=False, hexbin = False, hexbin_min_count = 1):
     temp_dataframe = dataframe.select(['LATITUDE', 'LONGITUDE', 'year']).toPandas()
     temp_dataframe['LATITUDE'] = temp_dataframe['LATITUDE'].values.astype(np.float)
     temp_dataframe['LONGITUDE'] = temp_dataframe['LONGITUDE'].values.astype(np.float)
 
-    fig = px.scatter_mapbox(temp_dataframe, lat=temp_dataframe.LATITUDE, lon=temp_dataframe.LONGITUDE,
-                            hover_name='year', zoom=10, animation_frame='year' if time_slider else None)
+    if not hexbin:
+        fig = px.scatter_mapbox(temp_dataframe, lat=temp_dataframe.LATITUDE, lon=temp_dataframe.LONGITUDE,
+                                hover_name='year', zoom=10, animation_frame='year' if time_slider else None)
+    else:
+        fig = ff.create_hexbin_mapbox(
+            data_frame=temp_dataframe,  lat=temp_dataframe.LATITUDE, lon=temp_dataframe.LONGITUDE, zoom=10,
+            nx_hexagon=hexbin, opacity=0.5, min_count=hexbin_min_count, labels={"color": "Count of incedents", 'frame': 'year'}, animation_frame='year' if time_slider else None
+        )
     fig.update_layout(mapbox_style="open-street-map", height=800)
 
     st.plotly_chart(fig, use_container_width=True)
@@ -178,9 +187,6 @@ st.title("New York City Map")
 df, unique_data = get_cached_data()
 
 unique_data = fill_config(unique_data)
-
-#st.write(df)
-#st.write(df.agg(*(countDistinct(col(c)).alias(c) for c in df.columns)).toPandas())
 
 st.header('Configurate values')
 
@@ -196,6 +202,12 @@ timeline = st.checkbox('Enable timeline')
 if unique_data['SHOW_FINAL_COUNT']:
     st.write('Total count of points: ' + str(df.count()))
 
+hexbin = st.checkbox("Hexbin")
+hexbin_min_count = 1
+if hexbin:
+    hexbin = st.slider('Count of hexbins:', min_value=50, max_value=500, step=50)
+    hexbin_min_count = st.slider('Min count of incedents:', min_value=1, max_value=200)
+
 if st.checkbox('Autoplot') or st.button("Plot it!"):
     with st.spinner('Plotting...'):
-        plot_points(df, timeline)
+        plot_points(df, timeline, hexbin, hexbin_min_count)
